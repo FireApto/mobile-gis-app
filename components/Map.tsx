@@ -117,49 +117,74 @@ export default function Map({ selectedBuilding, onBuildingClick, categoryFilter 
     return styles[roadType] || { color: '#cbd5e1', weight: 2, opacity: 0.5 };
   };
 
-  const onEachBuilding = (feature: any, layer: any) => {
-    const props = feature.properties;
-    const building = buildings.find(b => b.osm_id === props['@id']);
-    
-    layer.on({
-      click: () => {
-        if (building && onBuildingClick) {
-          onBuildingClick(building);
-        }
-      },
-      mouseover: (e: any) => {
-        e.target.setStyle({
-          fillOpacity: 0.7,
-        });
-      },
-      mouseout: (e: any) => {
-        e.target.setStyle({
-          fillOpacity: 0.4,
-        });
-      },
-    });
-
-    if (props.name) {
-      layer.bindTooltip(props.name, {
-        permanent: false,
-        direction: 'top',
+const onEachBuilding = (feature: any, layer: any) => {
+  const props = feature?.properties;
+  const building = buildings.find(b => b.osm_id === props?.['@id']);
+  
+  layer.on({
+    click: () => {
+      if (building && onBuildingClick) {
+        onBuildingClick(building);
+      }
+    },
+    mouseover: (e: any) => {
+      e.target.setStyle({
+        fillOpacity: 0.7,
       });
-    }
-  };
+    },
+    mouseout: (e: any) => {
+      e.target.setStyle({
+        fillOpacity: 0.4,
+      });
+    },
+  });
 
-  const onEachRoad = (feature: any, layer: any) => {
-    const props = feature.properties;
-    if (props.name) {
-      layer.bindPopup(`
-        <div class="p-2">
-          <h3 class="font-bold">${props.name}</h3>
-          <p class="text-sm text-gray-600">Type: ${props.highway_type || 'Unknown'}</p>
-          ${props.surface ? `<p class="text-sm text-gray-600">Surface: ${props.surface}</p>` : ''}
-        </div>
-      `);
-    }
-  };
+  if (props?.name) {
+    layer.bindTooltip(props.name, {
+      permanent: false,
+      direction: 'top',
+    });
+  }
+};
 
+const onEachRoad = (feature: any, layer: any) => {
+  const props = feature?.properties;
+  if (props?.name) {
+    layer.bindPopup(`
+      <div class="p-2">
+        <h3 class="font-bold">${props.name}</h3>
+        <p class="text-sm text-gray-600">Type: ${props.highway_type || 'Unknown'}</p>
+        ${props.surface ? `<p class="text-sm text-gray-600">Surface: ${props.surface}</p>` : ''}
+      </div>
+    `);
+  }
+};
+const [searchQuery, setSearchQuery] = useState('');
+const [searchResults, setSearchResults] = useState<Building[]>([]);
+const [showResults, setShowResults] = useState(false);
+
+function handleSearch(query: string) {
+  setSearchQuery(query);
+  if (query.length > 2) {
+    const results = buildings.filter(b => 
+      b.name?.toLowerCase().includes(query.toLowerCase())
+    ).slice(0, 5);
+    setSearchResults(results);
+    setShowResults(true);
+  } else {
+    setShowResults(false);
+  }
+}
+
+function selectBuilding(building: Building) {
+  if (onBuildingClick) {
+    onBuildingClick(building);
+  }
+  setSearchQuery('');
+  setShowResults(false);
+  setMapCenter([building.center_lat, building.center_lng]);
+  setMapZoom(18);
+}
   if (loading) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700">
