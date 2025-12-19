@@ -1,231 +1,262 @@
 // app/settings/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Volume2, Smartphone, Navigation, Moon, Bell, MapPin, Info } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { 
+  ChevronLeft, 
+  Volume2, 
+  Vibrate, 
+  Navigation, 
+  Sun, 
+  Bell, 
+  MapPin, 
+  Map, 
+  Building2, 
+  Satellite,
+  Info,
+  ChevronRight
+} from 'lucide-react';
+
+interface UserSettings {
+  id: number;
+  user_id: string;
+  show_landmarks: boolean;
+  buildings_3d: boolean;
+  satellite_view: boolean;
+  voice_navigation: boolean;
+  vibration_alerts: boolean;
+  auto_rerouting: boolean;
+  dark_mode: boolean;
+  notifications: boolean;
+  location_tracking: boolean;
+}
 
 export default function SettingsPage() {
   const router = useRouter();
-  
-  // Settings state
-  const [settings, setSettings] = useState({
-    voiceNavigation: true,
-    vibrationAlerts: true,
-    autoRerouting: true,
-    darkMode: false,
-    notifications: true,
-    locationTracking: true,
-  });
+  const [settings, setSettings] = useState<UserSettings | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  function toggleSetting(key: string) {
-    setSettings(prev => ({
-      ...prev,
-      [key]: !prev[key as keyof typeof prev]
-    }));
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  async function loadSettings() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      let { data: userSettings } = await supabase
+        .from('user_settings')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (!userSettings) {
+        // Create default settings
+        const { data: newSettings } = await supabase
+          .from('user_settings')
+          .insert({ user_id: user.id })
+          .select()
+          .single();
+        userSettings = newSettings;
+      }
+
+      setSettings(userSettings);
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function updateSetting(key: keyof UserSettings, value: boolean) {
+    if (!settings) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase
+      .from('user_settings')
+      .update({ [key]: value, updated_at: new Date().toISOString() })
+      .eq('user_id', user.id);
+
+    setSettings(prev => prev ? { ...prev, [key]: value } : null);
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-600"></div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white shadow-sm sticky top-0 z-10">
-        <div className="p-4 flex items-center gap-3">
-          <button onClick={() => router.push('/')} className="p-2 hover:bg-gray-100 rounded-lg">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
+      <div className="bg-white border-b sticky top-0 z-10">
+        <div className="px-4 py-4 flex items-center gap-3">
+          <button
+            onClick={() => router.back()}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <ChevronLeft className="w-6 h-6" />
           </button>
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
         </div>
       </div>
 
-      {/* Settings Content */}
-      <div className="p-4 space-y-6">
+      <div className="pb-6">
+        {/* Map Display Section */}
+        <div className="mt-6 bg-white">
+          <div className="px-4 py-3 border-b">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+              Map Display
+            </h2>
+          </div>
+          <SettingToggle
+            icon={<Map className="w-5 h-5 text-cyan-600" />}
+            title="Show Landmarks"
+            description="Display important campus landmarks on the map"
+            checked={settings?.show_landmarks ?? true}
+            onChange={(checked) => updateSetting('show_landmarks', checked)}
+          />
+          <SettingToggle
+            icon={<Building2 className="w-5 h-5 text-cyan-600" />}
+            title="3D Buildings"
+            description="Show buildings in 3D view"
+            checked={settings?.buildings_3d ?? false}
+            onChange={(checked) => updateSetting('buildings_3d', checked)}
+          />
+          <SettingToggle
+            icon={<Satellite className="w-5 h-5 text-cyan-600" />}
+            title="Satellite View"
+            description="Use satellite imagery for map display"
+            checked={settings?.satellite_view ?? false}
+            onChange={(checked) => updateSetting('satellite_view', checked)}
+          />
+        </div>
+
         {/* Navigation Options Section */}
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50 border-b">
-            <h2 className="font-semibold text-gray-700">Navigation Options</h2>
+        <div className="mt-6 bg-white">
+          <div className="px-4 py-3 border-b">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+              Navigation Options
+            </h2>
           </div>
-
-          {/* Voice Navigation */}
-          <div className="p-4 border-b flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Volume2 className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <h3 className="font-medium text-gray-900">Voice Navigation</h3>
-                <p className="text-sm text-gray-500">Turn-by-turn voice guidance</p>
-              </div>
-            </div>
-            <button
-              onClick={() => toggleSetting('voiceNavigation')}
-              className={`relative w-14 h-8 rounded-full transition-colors ${
-                settings.voiceNavigation ? 'bg-blue-600' : 'bg-gray-300'
-              }`}
-            >
-              <div
-                className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${
-                  settings.voiceNavigation ? 'translate-x-7' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Vibration Alerts */}
-          <div className="p-4 border-b flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                <Smartphone className="w-5 h-5 text-purple-600" />
-              </div>
-              <div>
-                <h3 className="font-medium text-gray-900">Vibration Alerts</h3>
-                <p className="text-sm text-gray-500">Vibrate for navigation alerts</p>
-              </div>
-            </div>
-            <button
-              onClick={() => toggleSetting('vibrationAlerts')}
-              className={`relative w-14 h-8 rounded-full transition-colors ${
-                settings.vibrationAlerts ? 'bg-blue-600' : 'bg-gray-300'
-              }`}
-            >
-              <div
-                className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${
-                  settings.vibrationAlerts ? 'translate-x-7' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Auto Rerouting */}
-          <div className="p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                <Navigation className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <h3 className="font-medium text-gray-900">Auto Rerouting</h3>
-                <p className="text-sm text-gray-500">Automatically find new routes when off course</p>
-              </div>
-            </div>
-            <button
-              onClick={() => toggleSetting('autoRerouting')}
-              className={`relative w-14 h-8 rounded-full transition-colors ${
-                settings.autoRerouting ? 'bg-blue-600' : 'bg-gray-300'
-              }`}
-            >
-              <div
-                className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${
-                  settings.autoRerouting ? 'translate-x-7' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
+          <SettingToggle
+            icon={<Volume2 className="w-5 h-5 text-cyan-600" />}
+            title="Voice Navigation"
+            description="Turn-by-turn voice guidance"
+            checked={settings?.voice_navigation ?? true}
+            onChange={(checked) => updateSetting('voice_navigation', checked)}
+          />
+          <SettingToggle
+            icon={<Vibrate className="w-5 h-5 text-cyan-600" />}
+            title="Vibration Alerts"
+            description="Vibrate for navigation alerts"
+            checked={settings?.vibration_alerts ?? true}
+            onChange={(checked) => updateSetting('vibration_alerts', checked)}
+          />
+          <SettingToggle
+            icon={<Navigation className="w-5 h-5 text-cyan-600" />}
+            title="Auto Rerouting"
+            description="Automatically find new routes when off course"
+            checked={settings?.auto_rerouting ?? true}
+            onChange={(checked) => updateSetting('auto_rerouting', checked)}
+          />
         </div>
 
         {/* App Customization Section */}
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50 border-b">
-            <h2 className="font-semibold text-gray-700">App Customization</h2>
+        <div className="mt-6 bg-white">
+          <div className="px-4 py-3 border-b">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+              App Customization
+            </h2>
           </div>
-
-          {/* Dark Mode */}
-          <div className="p-4 border-b flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
-                <Moon className="w-5 h-5 text-indigo-600" />
-              </div>
-              <div>
-                <h3 className="font-medium text-gray-900">Dark Mode</h3>
-                <p className="text-sm text-gray-500">Switch between light and dark theme</p>
-              </div>
-            </div>
-            <button
-              onClick={() => toggleSetting('darkMode')}
-              className={`relative w-14 h-8 rounded-full transition-colors ${
-                settings.darkMode ? 'bg-blue-600' : 'bg-gray-300'
-              }`}
-            >
-              <div
-                className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${
-                  settings.darkMode ? 'translate-x-7' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Notifications */}
-          <div className="p-4 border-b flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                <Bell className="w-5 h-5 text-yellow-600" />
-              </div>
-              <div>
-                <h3 className="font-medium text-gray-900">Notifications</h3>
-                <p className="text-sm text-gray-500">Receive app notifications</p>
-              </div>
-            </div>
-            <button
-              onClick={() => toggleSetting('notifications')}
-              className={`relative w-14 h-8 rounded-full transition-colors ${
-                settings.notifications ? 'bg-blue-600' : 'bg-gray-300'
-              }`}
-            >
-              <div
-                className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${
-                  settings.notifications ? 'translate-x-7' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Location Tracking */}
-          <div className="p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                <MapPin className="w-5 h-5 text-red-600" />
-              </div>
-              <div>
-                <h3 className="font-medium text-gray-900">Location Tracking</h3>
-                <p className="text-sm text-gray-500">Allow app to track your location</p>
-              </div>
-            </div>
-            <button
-              onClick={() => toggleSetting('locationTracking')}
-              className={`relative w-14 h-8 rounded-full transition-colors ${
-                settings.locationTracking ? 'bg-blue-600' : 'bg-gray-300'
-              }`}
-            >
-              <div
-                className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${
-                  settings.locationTracking ? 'translate-x-7' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
+          <SettingToggle
+            icon={<Sun className="w-5 h-5 text-cyan-600" />}
+            title="Dark Mode"
+            description="Switch between light and dark theme"
+            checked={settings?.dark_mode ?? false}
+            onChange={(checked) => updateSetting('dark_mode', checked)}
+          />
+          <SettingToggle
+            icon={<Bell className="w-5 h-5 text-cyan-600" />}
+            title="Notifications"
+            description="Receive app notifications"
+            checked={settings?.notifications ?? true}
+            onChange={(checked) => updateSetting('notifications', checked)}
+          />
+          <SettingToggle
+            icon={<MapPin className="w-5 h-5 text-cyan-600" />}
+            title="Location Tracking"
+            description="Allow app to track your location"
+            checked={settings?.location_tracking ?? true}
+            onChange={(checked) => updateSetting('location_tracking', checked)}
+          />
         </div>
 
         {/* About Section */}
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div className="mt-6 bg-white">
           <button
-            onClick={() => alert('DeKUT Navigator v1.0\n\nCampus navigation for Dedan Kimathi University of Technology')}
-            className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+            onClick={() => router.push('/about')}
+            className="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
           >
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                <Info className="w-5 h-5 text-gray-600" />
+              <div className="p-2 bg-cyan-50 rounded-full">
+                <Info className="w-5 h-5 text-cyan-600" />
               </div>
-              <div className="text-left">
-                <h3 className="font-medium text-gray-900">About DeKUT Navigator</h3>
-                <p className="text-sm text-gray-500">Version 1.0</p>
-              </div>
+              <span className="font-medium text-gray-900">About DeKUT Navigator</span>
             </div>
-            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
+            <ChevronRight className="w-5 h-5 text-gray-400" />
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Toggle Switch Component
+function SettingToggle({
+  icon,
+  title,
+  description,
+  checked,
+  onChange
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="px-4 py-4 flex items-center gap-3 border-b border-gray-100 last:border-b-0">
+      <div className="p-2 bg-cyan-50 rounded-full">
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <h3 className="font-medium text-gray-900">{title}</h3>
+        <p className="text-sm text-gray-500">{description}</p>
+      </div>
+      <button
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+          checked ? 'bg-cyan-600' : 'bg-gray-300'
+        }`}
+      >
+        <span
+          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+            checked ? 'translate-x-6' : 'translate-x-1'
+          }`}
+        />
+      </button>
     </div>
   );
 }
