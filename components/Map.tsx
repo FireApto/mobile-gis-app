@@ -1,10 +1,11 @@
 // components/Map.tsx
 'use client';
-
-import { useEffect, useState } from 'react';
+import { Polyline } from 'react-leaflet';
+import { useEffect, useState, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { Navigation, Clock, Phone, Mail, MapPin, Wrench, ExternalLink } from 'lucide-react';
 
 // Fix for default marker icon
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -23,20 +24,29 @@ interface Building {
     name: string;
     color: string;
   };
+  details?: {
+    description: string | null;
+    opening_hours: string | null;
+    facilities_count: number;
+    contact_phone: string | null;
+    contact_email: string | null;
+  };
 }
 
 interface MapProps {
   buildings: Building[];
   center?: [number, number];
   zoom?: number;
-  selectedBuildingId?: number | null; // ADD THIS
+  selectedBuildingId?: number | null;
   onBuildingClick?: (buildingId: number) => void;
+  onGetDirections?: (buildingId: number) => void;
+  routeCoordinates?: [number, number][];
+  userLocation?: [number, number] | null; // NEW: User's current location
 }
 
-// Custom marker icon creator
+// Custom marker icon creator for buildings
 function createCustomIcon(color: string = '#0891B2', isSelected: boolean = false) {
   const size = isSelected ? 40 : 32;
-  const pulseAnimation = isSelected ? 'animation: pulse 2s infinite;' : '';
   
   return L.divIcon({
     className: 'custom-marker',
@@ -49,7 +59,7 @@ function createCustomIcon(color: string = '#0891B2', isSelected: boolean = false
         transform: rotate(-45deg);
         border: ${isSelected ? '4px' : '3px'} solid white;
         box-shadow: 0 ${isSelected ? '4px 12px' : '2px 8px'} rgba(0,0,0,${isSelected ? '0.4' : '0.3'});
-        ${pulseAnimation}
+        ${isSelected ? 'animation: pulse 2s infinite;' : ''}
       ">
         <div style="
           transform: rotate(45deg);
@@ -57,7 +67,7 @@ function createCustomIcon(color: string = '#0891B2', isSelected: boolean = false
           font-size: ${isSelected ? '20px' : '16px'};
           margin-top: ${isSelected ? '6px' : '4px'};
           text-align: center;
-        ">${isSelected ? '📍' : '📍'}</div>
+        ">📍</div>
       </div>
       ${isSelected ? `
         <style>
@@ -74,7 +84,85 @@ function createCustomIcon(color: string = '#0891B2', isSelected: boolean = false
   });
 }
 
-// Component to handle map centering and popup opening
+// NEW: Origin marker icon (green circular marker for user location)
+function createOriginIcon() {
+  return L.divIcon({
+    className: 'origin-marker',
+    html: `
+      <div style="
+        position: relative;
+        width: 32px;
+        height: 32px;
+      ">
+        <div style="
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: 32px;
+          height: 32px;
+          background-color: #10b981;
+          border-radius: 50%;
+          border: 4px solid white;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        "></div>
+        <div style="
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: 12px;
+          height: 12px;
+          background-color: white;
+          border-radius: 50%;
+        "></div>
+      </div>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -16],
+  });
+}
+
+// NEW: Destination marker icon (red for destination during navigation)
+function createDestinationIcon() {
+  const size = 40;
+  
+  return L.divIcon({
+    className: 'destination-marker',
+    html: `
+      <div style="
+        background-color: #EF4444;
+        width: ${size}px;
+        height: ${size}px;
+        border-radius: 50% 50% 50% 0;
+        transform: rotate(-45deg);
+        border: 4px solid white;
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.5);
+        animation: pulse-destination 2s infinite;
+      ">
+        <div style="
+          transform: rotate(45deg);
+          color: white;
+          font-size: 20px;
+          margin-top: 6px;
+          text-align: center;
+        ">🎯</div>
+      </div>
+      <style>
+        @keyframes pulse-destination {
+          0%, 100% { transform: scale(1) rotate(-45deg); }
+          50% { transform: scale(1.1) rotate(-45deg); }
+        }
+      </style>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size],
+    popupAnchor: [0, -size],
+  });
+}
+
+// Component to handle map centering
 function MapUpdater({ 
   center, 
   selectedBuildingId, 
@@ -91,7 +179,6 @@ function MapUpdater({
       try {
         map.setView(center, map.getZoom());
         
-        // If a building is selected, find and open its popup
         if (selectedBuildingId) {
           setTimeout(() => {
             map.eachLayer((layer: any) => {
@@ -104,7 +191,7 @@ function MapUpdater({
                 }
               }
             });
-          }, 100);
+          }, 300);
         }
       } catch (error) {
         console.error('Error updating map view:', error);
@@ -117,10 +204,13 @@ function MapUpdater({
 
 export function Map({ 
   buildings, 
-  center = [-0.3924, 36.9626], 
+  center = [-0.3970, 36.9580], 
   zoom = 17,
-  selectedBuildingId = null, // ADD THIS
-  onBuildingClick 
+  selectedBuildingId = null,
+  onBuildingClick,
+  onGetDirections,
+  routeCoordinates = [],
+  userLocation = null // NEW: Accept user location
 }: MapProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -138,6 +228,9 @@ export function Map({
       </div>
     );
   }
+
+  // Check if navigation is active (has route and user location)
+  const isNavigating = routeCoordinates.length > 0 && userLocation;
 
   return (
     <MapContainer
@@ -157,7 +250,45 @@ export function Map({
         buildings={buildings}
       />
 
-      {/* Building Markers */}
+      {/* NEW: Origin Marker - User's Location (Green Circle) */}
+      {userLocation && isNavigating && (
+        <Marker
+          position={userLocation}
+          icon={createOriginIcon()}
+          zIndexOffset={1000} // Keep on top
+        >
+          <Popup>
+            <div className="p-2 min-w-[200px]">
+              <h3 className="font-bold text-green-600 mb-1 flex items-center gap-2">
+                <MapPin className="w-4 h-4" />
+                Your Location
+              </h3>
+              <p className="text-sm text-gray-600">Starting point</p>
+              <div className="mt-2 pt-2 border-t border-gray-200">
+                <p className="text-xs text-gray-500">
+                  📍 {userLocation[0].toFixed(6)}, {userLocation[1].toFixed(6)}
+                </p>
+              </div>
+            </div>
+          </Popup>
+        </Marker>
+      )}
+
+      {/* ROUTE LINE */}
+      {routeCoordinates.length > 0 && (
+        <Polyline
+          positions={routeCoordinates}
+          pathOptions={{
+            color: '#0891B2',
+            weight: 5,
+            opacity: 0.8,
+            lineJoin: 'round',
+            lineCap: 'round'
+          }}
+        />
+      )}
+
+      {/* Building Markers with Enhanced Popups */}
       {buildings
         .filter(building => 
           building.center_lat != null && 
@@ -167,13 +298,16 @@ export function Map({
         )
         .map((building) => {
           const color = building.category?.color || '#0891B2';
-          const isSelected = building.id === selectedBuildingId; // CHECK IF SELECTED
+          const isSelected = building.id === selectedBuildingId;
+          
+          // Use destination icon if this building is selected during navigation
+          const useDestinationIcon = isSelected && isNavigating;
           
           return (
             <Marker
               key={building.id}
               position={[building.center_lat, building.center_lng]}
-              icon={createCustomIcon(color, isSelected)}
+              icon={useDestinationIcon ? createDestinationIcon() : createCustomIcon(color, isSelected)}
               eventHandlers={{
                 click: () => {
                   if (onBuildingClick) {
@@ -182,22 +316,89 @@ export function Map({
                 },
               }}
             >
-              <Popup>
-                <div className="p-2">
-                  <h3 className="font-bold text-gray-900 mb-1">
-                    {building.name || 'Unnamed Building'}
-                  </h3>
-                  {building.category && (
-                    <span
-                      className="inline-block px-2 py-0.5 text-xs font-medium rounded"
-                      style={{
-                        backgroundColor: `${color}20`,
-                        color: color
-                      }}
-                    >
-                      {building.category.name}
-                    </span>
+              <Popup className="custom-popup" maxWidth={300}>
+                <div className="p-3 min-w-[280px]">
+                  {/* Header */}
+                  <div className="mb-3">
+                    <h3 className="text-lg font-bold text-gray-900 mb-1">
+                      {building.name || 'Unnamed Building'}
+                      {useDestinationIcon && (
+                        <span className="ml-2 text-red-500 text-sm">🎯 Destination</span>
+                      )}
+                    </h3>
+                    {building.category && (
+                      <span
+                        className="inline-block px-2 py-1 text-xs font-medium rounded-full"
+                        style={{
+                          backgroundColor: `${color}15`,
+                          color: color
+                        }}
+                      >
+                        {building.category.name}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Description */}
+                  {building.details?.description && (
+                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+                      {building.details.description}
+                    </p>
                   )}
+
+                  {/* Building Info */}
+                  <div className="space-y-2 mb-3">
+                    {building.details?.opening_hours && (
+                      <div className="flex items-center gap-2 text-sm text-gray-700">
+                        <Clock className="w-4 h-4 text-gray-500" />
+                        <span>{building.details.opening_hours}</span>
+                      </div>
+                    )}
+
+                    {building.details?.facilities_count && building.details.facilities_count > 0 && (
+                      <div className="flex items-center gap-2 text-sm text-gray-700">
+                        <Wrench className="w-4 h-4 text-gray-500" />
+                        <span>{building.details.facilities_count} facilities</span>
+                      </div>
+                    )}
+
+                    {building.details?.contact_phone && (
+                      <div className="flex items-center gap-2 text-sm text-gray-700">
+                        <Phone className="w-4 h-4 text-gray-500" />
+                        <a href={`tel:${building.details.contact_phone}`} className="hover:text-cyan-600">
+                          {building.details.contact_phone}
+                        </a>
+                      </div>
+                    )}
+
+                    {building.details?.contact_email && (
+                      <div className="flex items-center gap-2 text-sm text-gray-700">
+                        <Mail className="w-4 h-4 text-gray-500" />
+                        <a href={`mailto:${building.details.contact_email}`} className="hover:text-cyan-600 truncate">
+                          {building.details.contact_email}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-2 pt-2 border-t border-gray-200">
+                    <button
+                      onClick={() => onGetDirections && onGetDirections(building.id)}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white rounded-lg transition-colors"
+                      style={{ backgroundColor: color }}
+                    >
+                      <Navigation className="w-4 h-4" />
+                      <span>Directions</span>
+                    </button>
+                    <button
+                      onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${building.center_lat},${building.center_lng}`, '_blank')}
+                      className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                      title="Open in Google Maps"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </Popup>
             </Marker>

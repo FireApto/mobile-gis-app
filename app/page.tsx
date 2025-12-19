@@ -1,18 +1,21 @@
 // app/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Sidebar } from '@/components/Sidebar';
 import dynamic from 'next/dynamic';
+import { getWalkingRoute, Route } from '@/lib/routing';
 import { 
   Menu, 
   Search, 
   Locate, 
   Plus, 
   Minus,
-  Loader2
+  Loader2,
+  X,
+  Navigation
 } from 'lucide-react';
 
 const Map = dynamic(() => import('@/components/Map').then(mod => ({ default: mod.Map })), {
@@ -33,24 +36,105 @@ interface Building {
     name: string;
     color: string;
   };
+  details?: any;
 }
 
-export default function MapPage() {
+function MapPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromId = searchParams.get('from');
+  const toId = searchParams.get('to');
+  
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Building[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const [buildings, setBuildings] = useState<Building[]>([]);
-  const [mapCenter, setMapCenter] = useState<[number, number]>([-0.3924, 36.9626]);
-  const [mapZoom, setMapZoom] = useState(17);
-  const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null); // ADD THIS
+  const [allBuildings, setAllBuildings] = useState<Building[]>([]);
+  const [visibleBuildings, setVisibleBuildings] = useState<Building[]>([]);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([-0.3970, 36.9580]);
+  const [mapZoom, setMapZoom] = useState(16);
+  const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [activeRoute, setActiveRoute] = useState<Route | null>(null);
+  const [routeCoordinates, setRouteCoordinates] = useState<[number, number][]>([]);
+  const [showStepsModal, setShowStepsModal] = useState(false); // NEW!
 
   useEffect(() => {
     loadBuildings();
-    getUserLocation();
   }, []);
+
+  useEffect(() => {
+    if (fromId && toId && allBuildings.length > 0) {
+      handleNavigationMode();
+    }
+  }, [fromId, toId, allBuildings]);
+
+  async function fetchAndDisplayRoute(
+    origin: [number, number],
+    destinationId: number
+  ) {
+    const destination = allBuildings.find(b => b.id === destinationId);
+    
+    if (!destination) return;
+    
+    const route = await getWalkingRoute(
+      origin,
+      [destination.center_lat, destination.center_lng]
+    );
+    
+    if (route) {
+      setActiveRoute(route);
+      setRouteCoordinates(route.coordinates);
+      
+      setMapCenter([
+        (origin[0] + destination.center_lat) / 2,
+        (origin[1] + destination.center_lng) / 2
+      ]);
+      setMapZoom(16);
+      
+      setSelectedBuildingId(destination.id);
+      setVisibleBuildings([destination]);
+    }
+  }
+
+  async function handleNavigationMode() {
+    if (!fromId || !toId) return;
+    
+    setIsNavigating(true);
+    
+    let originCoords: [number, number] | null = null;
+    
+    if (parseInt(fromId) === 0) {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            originCoords = [position.coords.latitude, position.coords.longitude];
+            await fetchAndDisplayRoute(originCoords, parseInt(toId));
+          },
+          (error) => {
+            console.error('Could not get location');
+          }
+        );
+      }
+    } else {
+      const origin = allBuildings.find(b => b.id === parseInt(fromId));
+      if (origin) {
+        originCoords = [origin.center_lat, origin.center_lng];
+        await fetchAndDisplayRoute(originCoords, parseInt(toId));
+      }
+    }
+  }
+
+  function exitNavigationMode() {
+    setIsNavigating(false);
+    setVisibleBuildings([]);
+    setSelectedBuildingId(null);
+    setActiveRoute(null);
+    setRouteCoordinates([]);
+    setShowStepsModal(false);
+    router.push('/');
+  }
 
   async function loadBuildings() {
     try {
@@ -61,11 +145,19 @@ export default function MapPage() {
           name,
           center_lat,
           center_lng,
-          category:building_categories(name, color)
+          category:building_categories(name, color),
+          details:building_details(
+            description,
+            opening_hours,
+            facilities_count,
+            contact_phone,
+            contact_email
+          )
         `);
 
       if (data) {
-        setBuildings(data);
+        setAllBuildings(data);
+        setVisibleBuildings([]);
       }
     } catch (error) {
       console.error('Error loading buildings:', error);
@@ -93,6 +185,7 @@ export default function MapPage() {
     if (!query.trim()) {
       setSearchResults([]);
       setShowSearchResults(false);
+      setVisibleBuildings([]);
       return;
     }
 
@@ -106,35 +199,173 @@ export default function MapPage() {
         category:building_categories(name, color)
       `)
       .ilike('name', `%${query}%`)
-      .limit(5);
+      .limit(10);
 
     if (data) {
       setSearchResults(data);
       setShowSearchResults(true);
+      setVisibleBuildings(data);
     }
   }
 
   function selectBuilding(building: Building) {
     setShowSearchResults(false);
-    setSearchQuery(building.name || ''); // KEEP THE NAME IN SEARCH
+    setSearchQuery(building.name || '');
     setMapCenter([building.center_lat, building.center_lng]);
-    setMapZoom(19); // ZOOM IN CLOSER
-    setSelectedBuildingId(building.id); // SELECT THE BUILDING
+    setMapZoom(19);
+    setSelectedBuildingId(building.id);
+    setVisibleBuildings([building]);
   }
 
   function handleBuildingClick(buildingId: number) {
     setSelectedBuildingId(buildingId);
-    const building = buildings.find(b => b.id === buildingId);
+    const building = allBuildings.find(b => b.id === buildingId);
     if (building) {
       setMapCenter([building.center_lat, building.center_lng]);
       setMapZoom(19);
+      setVisibleBuildings([building]);
     }
   }
 
   function handleLocateMe() {
     getUserLocation();
-    setMapZoom(19);
-    setSelectedBuildingId(null); // CLEAR SELECTION
+    setMapZoom(18);
+    setSelectedBuildingId(null);
+    setVisibleBuildings([]);
+    setSearchQuery('');
+  }
+
+  function clearMap() {
+    setVisibleBuildings([]);
+    setSearchQuery('');
+    setSelectedBuildingId(null);
+  }
+
+  function handleGetDirections(buildingId: number) {
+    router.push(`/directions?to=${buildingId}`);
+  }
+
+  // ROUTE INFO PANEL COMPONENT
+  function RouteInfoPanel() {
+    if (!activeRoute) return null;
+    
+    const distanceKm = (activeRoute.distance / 1000).toFixed(2);
+    const durationMin = Math.ceil(activeRoute.duration / 60);
+    
+    return (
+      <div className="absolute bottom-24 left-4 right-4 z-30 max-w-md mx-auto">
+        <div className="bg-white rounded-lg shadow-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-cyan-100 rounded-full">
+                <Navigation className="w-5 h-5 text-cyan-600" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Walking Route</p>
+                <p className="font-bold text-gray-900">
+                  {distanceKm} km · {durationMin} min
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowStepsModal(true)}
+              className="text-cyan-600 text-sm font-medium hover:text-cyan-700"
+            >
+              View Steps
+            </button>
+          </div>
+          
+          <div className="space-y-2 text-sm">
+            {activeRoute.steps.slice(0, 3).map((step, index) => (
+              <div key={index} className="flex items-start gap-2 text-gray-600">
+                <span className="font-medium text-cyan-600">{index + 1}.</span>
+                <span className="line-clamp-1">{step.instruction}</span>
+              </div>
+            ))}
+            {activeRoute.steps.length > 3 && (
+              <p className="text-gray-400 text-xs">
+                +{activeRoute.steps.length - 3} more steps
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // STEPS MODAL COMPONENT
+  function StepsModal({ 
+    isOpen, 
+    onClose, 
+    route 
+  }: { 
+    isOpen: boolean; 
+    onClose: () => void; 
+    route: Route | null;
+  }) {
+    if (!isOpen || !route) return null;
+
+    const distanceKm = (route.distance / 1000).toFixed(2);
+    const durationMin = Math.ceil(route.duration / 60);
+
+    return (
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col">
+          {/* Header */}
+          <div className="p-6 border-b">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-2xl font-bold text-gray-900">Turn-by-Turn Directions</h2>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <Navigation className="w-4 h-4" />
+              <span>{distanceKm} km · {durationMin} min walk</span>
+            </div>
+          </div>
+
+          {/* Steps List */}
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="space-y-4">
+              {route.steps.map((step, index) => (
+                <div key={index} className="flex items-start gap-4">
+                  {/* Step Number */}
+                  <div className="flex-shrink-0 w-8 h-8 bg-cyan-600 text-white rounded-full flex items-center justify-center font-bold">
+                    {index + 1}
+                  </div>
+
+                  {/* Step Details */}
+                  <div className="flex-1 pt-1">
+                    <p className="font-medium text-gray-900 mb-1">
+                      {step.instruction}
+                    </p>
+                    <div className="flex items-center gap-3 text-sm text-gray-500">
+                      <span>{step.distance}m</span>
+                      <span>·</span>
+                      <span>{Math.ceil(step.duration / 60)} min</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="p-6 border-t">
+            <button
+              onClick={onClose}
+              className="w-full px-6 py-3 bg-cyan-600 text-white rounded-lg font-medium hover:bg-cyan-700 transition-colors"
+            >
+              Got it!
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -142,6 +373,22 @@ export default function MapPage() {
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="relative h-full">
+        {/* Navigation Mode Banner */}
+        {isNavigating && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-cyan-600 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+              <span className="font-medium">Navigation Active</span>
+            </div>
+            <button
+              onClick={exitNavigationMode}
+              className="p-1 hover:bg-cyan-700 rounded-full transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
         {/* Top Bar */}
         <div className="absolute top-0 left-0 right-0 z-30">
           <div className="bg-white shadow-lg m-4 rounded-lg">
@@ -158,15 +405,16 @@ export default function MapPage() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Search buildings, facilities, or types..."
+                    placeholder="Search buildings to show on map..."
                     value={searchQuery}
                     onChange={(e) => handleSearch(e.target.value)}
                     onFocus={() => searchQuery && setShowSearchResults(true)}
-                    className="w-full pl-10 pr-4 py-2 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    disabled={isNavigating}
+                    className="w-full pl-10 pr-4 py-2 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50"
                   />
                 </div>
 
-                {showSearchResults && searchResults.length > 0 && (
+                {showSearchResults && searchResults.length > 0 && !isNavigating && (
                   <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-xl max-h-80 overflow-y-auto">
                     {searchResults.map((building) => (
                       <button
@@ -187,6 +435,15 @@ export default function MapPage() {
                   </div>
                 )}
               </div>
+
+              {visibleBuildings.length > 0 && !isNavigating && (
+                <button
+                  onClick={clearMap}
+                  className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  Clear
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -199,11 +456,13 @@ export default function MapPage() {
             </div>
           ) : (
             <Map
-              buildings={buildings}
+              buildings={visibleBuildings}
               center={mapCenter}
               zoom={mapZoom}
-              selectedBuildingId={selectedBuildingId} // PASS SELECTED ID
+              selectedBuildingId={selectedBuildingId}
               onBuildingClick={handleBuildingClick}
+              onGetDirections={handleGetDirections}
+              routeCoordinates={routeCoordinates}
             />
           )}
         </div>
@@ -213,6 +472,7 @@ export default function MapPage() {
           <button 
             onClick={handleLocateMe}
             className="bg-white p-3 rounded-lg shadow-lg hover:bg-gray-50 transition-colors"
+            title="My Location"
           >
             <Locate className="w-6 h-6 text-gray-700" />
           </button>
@@ -233,25 +493,58 @@ export default function MapPage() {
           </div>
         </div>
 
+        {/* Route Info Panel */}
+        {isNavigating && <RouteInfoPanel />}
+
         {/* Quick Access Buttons */}
-        <div className="absolute bottom-6 left-0 right-0 z-20 px-4">
-          <div className="bg-white rounded-full shadow-xl p-2 flex items-center justify-center gap-2 max-w-md mx-auto">
-            <button
-              onClick={() => router.push('/buildings')}
-              className="flex-1 px-4 py-2 rounded-full font-medium text-cyan-600 hover:bg-cyan-50 transition-colors"
-            >
-              All Buildings
-            </button>
-            <div className="w-px h-6 bg-gray-300" />
-            <button
-              onClick={() => router.push('/favorites')}
-              className="flex-1 px-4 py-2 rounded-full font-medium text-cyan-600 hover:bg-cyan-50 transition-colors"
-            >
-              Favorites
-            </button>
+        {!isNavigating && (
+          <div className="absolute bottom-6 left-0 right-0 z-20 px-4">
+            <div className="bg-white rounded-full shadow-xl p-2 flex items-center justify-center gap-2 max-w-md mx-auto">
+              <button
+                onClick={() => router.push('/buildings')}
+                className="flex-1 px-4 py-2 rounded-full font-medium text-cyan-600 hover:bg-cyan-50 transition-colors"
+              >
+                All Buildings
+              </button>
+              <div className="w-px h-6 bg-gray-300" />
+              <button
+                onClick={() => router.push('/favorites')}
+                className="flex-1 px-4 py-2 rounded-full font-medium text-cyan-600 hover:bg-cyan-50 transition-colors"
+              >
+                Favorites
+              </button>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Info Message */}
+        {visibleBuildings.length === 0 && !loading && !isNavigating && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 text-center pointer-events-none">
+            <p className="text-gray-500 bg-white/90 px-4 py-2 rounded-lg shadow">
+              🔍 Search for a building to see it on the map
+            </p>
+          </div>
+        )}
+
+        {/* Steps Modal */}
+        <StepsModal 
+          isOpen={showStepsModal}
+          onClose={() => setShowStepsModal(false)}
+          route={activeRoute}
+        />
       </div>
     </div>
+  );
+}
+
+export default function MapPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="w-12 h-12 animate-spin text-cyan-600" />
+      </div>
+    }>
+      <MapPageContent />
+    </Suspense>
   );
 }
