@@ -1,4 +1,3 @@
-// app/buildings/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -6,35 +5,12 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { BuildingCard } from '@/components/BuildingCard';
 import { Search, ChevronLeft, Loader2 } from 'lucide-react';
+import { Building, BuildingCategory } from '@/types/database.types';
 
-// Import your types
-interface BuildingCategory {
-  id: number;
-  name: string;
-  color: string;
-  icon: string | null;
-  display_order: number;
-}
 
-interface BuildingDetails {
-  id: number;
-  building_id: number;
-  description: string | null;
-  opening_hours: string | null;
-  facilities_count: number;
-}
 
-interface Building {
-  id: number;
-  name: string | null;
-  building_type: string | null;
-  amenity: string | null;
-  center_lat: number;
-  center_lng: number;
-  category_id: number | null;
-  category?: BuildingCategory;
-  details?: BuildingDetails;
-}
+// CORRECT - Import from types file:
+import { Building } from '@/types/database.types';
 
 export default function BuildingsPage() {
   const router = useRouter();
