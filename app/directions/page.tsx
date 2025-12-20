@@ -41,35 +41,41 @@ function DirectionsContent() {
     loadBuildings();
   }, [destinationId]);
 
-  async function loadBuildings() {
-    setLoading(true);
-    try {
-      const { data } = await supabase
-        .from('buildings')
-        .select(`
-          id,
-          name,
-          center_lat,
-          center_lng,
-          category:building_categories(name, color)
-        `)
-        .order('name');
+async function loadBuildings() {
+  setLoading(true);
+  try {
+    const { data } = await supabase
+      .from('buildings')
+      .select(`
+        id,
+        name,
+        center_lat,
+        center_lng,
+        category_id,
+        category:building_categories!inner(name, color)
+      `)
+      .order('name');
 
-      if (data) {
-        setAllBuildings(data);
-        
-        // Set destination from URL
-        if (destinationId) {
-          const dest = data.find(b => b.id === parseInt(destinationId));
-          if (dest) setDestination(dest);
-        }
+    if (data) {
+      // Transform data to match Building type
+      const buildings: Building[] = data.map((item: any) => ({
+        ...item,
+        category: Array.isArray(item.category) ? item.category[0] : item.category
+      }));
+      setAllBuildings(buildings);
+      
+      // Set destination from URL
+      if (destinationId) {
+        const dest = buildings.find(b => b.id === parseInt(destinationId));
+        if (dest) setDestination(dest);
       }
-    } catch (error) {
-      console.error('Error loading buildings:', error);
-    } finally {
-      setLoading(false);
     }
+  } catch (error) {
+    console.error('Error loading buildings:', error);
+  } finally {
+    setLoading(false);
   }
+}
 
   function selectOrigin(building: Building) {
     setOrigin(building);
