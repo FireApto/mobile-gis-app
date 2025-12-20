@@ -55,6 +55,7 @@ function MapPageContent() {
   const [mapZoom, setMapZoom] = useState(16);
   const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
   const [activeRoute, setActiveRoute] = useState<Route | null>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][]>([]);
@@ -69,6 +70,24 @@ function MapPageContent() {
       handleNavigationMode();
     }
   }, [fromId, toId, allBuildings]);
+  // Add this to your MapPageContent function in app/page.tsx
+// After the existing useEffect for fromId and toId
+
+useEffect(() => {
+  // Handle ?selected= parameter from buildings list
+  const selectedId = searchParams.get('selected');
+  if (selectedId && allBuildings.length > 0) {
+    const building = allBuildings.find(b => b.id === parseInt(selectedId));
+    if (building) {
+      // Center on the building
+      setMapCenter([building.center_lat, building.center_lng]);
+      setMapZoom(19);
+      setSelectedBuildingId(building.id);
+      setVisibleBuildings([building]);
+      setSearchQuery(building.name || '');
+    }
+  }
+}, [searchParams, allBuildings]);
 
   async function fetchAndDisplayRoute(
     origin: [number, number],
@@ -98,33 +117,35 @@ function MapPageContent() {
     }
   }
 
-  async function handleNavigationMode() {
-    if (!fromId || !toId) return;
-    
-    setIsNavigating(true);
-    
-    let originCoords: [number, number] | null = null;
-    
-    if (parseInt(fromId) === 0) {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          async (position) => {
-            originCoords = [position.coords.latitude, position.coords.longitude];
-            await fetchAndDisplayRoute(originCoords, parseInt(toId));
-          },
-          (error) => {
-            console.error('Could not get location');
-          }
-        );
-      }
-    } else {
-      const origin = allBuildings.find(b => b.id === parseInt(fromId));
-      if (origin) {
-        originCoords = [origin.center_lat, origin.center_lng];
-        await fetchAndDisplayRoute(originCoords, parseInt(toId));
-      }
+async function handleNavigationMode() {
+  if (!fromId || !toId) return;
+  
+  setIsNavigating(true);
+  
+  let originCoords: [number, number] | null = null;
+  
+  if (parseInt(fromId) === 0) {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          originCoords = [position.coords.latitude, position.coords.longitude];
+          setUserLocation(originCoords); // ✨ NEW LINE
+          await fetchAndDisplayRoute(originCoords, parseInt(toId));
+        },
+        (error) => {
+          console.error('Could not get location');
+        }
+      );
+    }
+  } else {
+    const origin = allBuildings.find(b => b.id === parseInt(fromId));
+    if (origin) {
+      originCoords = [origin.center_lat, origin.center_lng];
+      setUserLocation(originCoords); // ✨ NEW LINE
+      await fetchAndDisplayRoute(originCoords, parseInt(toId));
     }
   }
+}
 
   function exitNavigationMode() {
     setIsNavigating(false);
@@ -133,6 +154,7 @@ function MapPageContent() {
     setActiveRoute(null);
     setRouteCoordinates([]);
     setShowStepsModal(false);
+	setUserLocation(null);
     router.push('/');
   }
 
@@ -474,6 +496,7 @@ function MapPageContent() {
               onBuildingClick={handleBuildingClick}
               onGetDirections={handleGetDirections}
               routeCoordinates={routeCoordinates}
+			  userLocation={userLocation}
             />
           )}
         </div>

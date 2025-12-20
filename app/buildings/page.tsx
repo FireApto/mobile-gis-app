@@ -7,9 +7,6 @@ import { BuildingCard } from '@/components/BuildingCard';
 import { Search, ChevronLeft, Loader2 } from 'lucide-react';
 import { Building, BuildingCategory } from '@/types/database.types';
 
-
-
-
 export default function BuildingsPage() {
   const router = useRouter();
   const [buildings, setBuildings] = useState<Building[]>([]);
@@ -99,6 +96,12 @@ export default function BuildingsPage() {
       
       setFavorites(prev => new Set(prev).add(buildingId));
     }
+  }
+
+  function handleBuildingClick(buildingId: number) {
+    // Redirect to map page with the building selected
+    // This will trigger the map to center on this building and show it
+    router.push(`/?selected=${buildingId}`);
   }
 
   // Filter buildings based on search and category
@@ -194,7 +197,7 @@ export default function BuildingsPage() {
               building={building}
               isFavorite={favorites.has(building.id)}
               onToggleFavorite={toggleFavorite}
-              onClick={() => router.push(`/?building=${building.id}`)}
+              onClick={() => handleBuildingClick(building.id)}
             />
           ))
         )}

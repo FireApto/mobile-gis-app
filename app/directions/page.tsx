@@ -4,26 +4,16 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { Building } from '@/types/database.types';
 import { 
   ChevronLeft, 
   Navigation, 
   Clock, 
   MapPin,
-  ArrowRight,
   Loader2,
-  Target
+  Target,
+  X
 } from 'lucide-react';
-
-interface Building {
-  id: number;
-  name: string | null;
-  center_lat: number;
-  center_lng: number;
-  category?: {
-    name: string;
-    color: string;
-  };
-}
 
 function DirectionsContent() {
   const router = useRouter();
@@ -39,43 +29,46 @@ function DirectionsContent() {
 
   useEffect(() => {
     loadBuildings();
-  }, [destinationId]);
+  }, []);
 
-async function loadBuildings() {
-  setLoading(true);
-  try {
-    const { data } = await supabase
-      .from('buildings')
-      .select(`
-        id,
-        name,
-        center_lat,
-        center_lng,
-        category_id,
-        category:building_categories!inner(name, color)
-      `)
-      .order('name');
-
-    if (data) {
-      // Transform data to match Building type
-      const buildings: Building[] = data.map((item: any) => ({
-        ...item,
-        category: Array.isArray(item.category) ? item.category[0] : item.category
-      }));
-      setAllBuildings(buildings);
-      
-      // Set destination from URL
-      if (destinationId) {
-        const dest = buildings.find(b => b.id === parseInt(destinationId));
-        if (dest) setDestination(dest);
+  useEffect(() => {
+    // Set destination when buildings are loaded
+    if (destinationId && allBuildings.length > 0) {
+      const dest = allBuildings.find(b => b.id === parseInt(destinationId));
+      if (dest) {
+        setDestination(dest);
       }
     }
-  } catch (error) {
-    console.error('Error loading buildings:', error);
-  } finally {
-    setLoading(false);
+  }, [destinationId, allBuildings]);
+
+  async function loadBuildings() {
+    setLoading(true);
+    try {
+      const { data } = await supabase
+        .from('buildings')
+        .select(`
+          id,
+          name,
+          center_lat,
+          center_lng,
+          category:building_categories(name, color)
+        `)
+        .order('name');
+
+      if (data) {
+        // Transform data to match Building type
+        const buildings: Building[] = data.map((item: any) => ({
+          ...item,
+          category: Array.isArray(item.category) ? item.category[0] : item.category
+        }));
+        setAllBuildings(buildings);
+      }
+    } catch (error) {
+      console.error('Error loading buildings:', error);
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
   function selectOrigin(building: Building) {
     setOrigin(building);
@@ -92,12 +85,16 @@ async function loadBuildings() {
             name: 'My Location',
             center_lat: position.coords.latitude,
             center_lng: position.coords.longitude
-          });
+          } as Building);
+          setShowOriginSelect(false);
         },
         (error) => {
-          alert('Unable to get your location');
+          console.error('Geolocation error:', error);
+          alert('Unable to get your location. Please enable location services.');
         }
       );
+    } else {
+      alert('Geolocation is not supported by your browser.');
     }
   }
 
@@ -118,34 +115,9 @@ async function loadBuildings() {
     return Math.round(R * c); // Distance in meters
   }
 
-  function getDirectionsSteps() {
-    if (!origin || !destination) return [];
-    
-    const distance = calculateDistance();
-    const walkingTime = distance ? Math.ceil(distance / 83) : 5; // 83 m/min = 5 km/h walking speed
-    
-    return [
-      {
-        instruction: `Head towards ${destination.name}`,
-        distance: distance ? `${distance}m` : 'Unknown',
-        icon: <Navigation className="w-5 h-5" />
-      },
-      {
-        instruction: `Continue walking for about ${walkingTime} minutes`,
-        distance: `${walkingTime} min`,
-        icon: <Clock className="w-5 h-5" />
-      },
-      {
-        instruction: `Arrive at ${destination.name}`,
-        distance: 'Destination',
-        icon: <MapPin className="w-5 h-5" />
-      }
-    ];
-  }
-
   const distance = calculateDistance();
   const walkingTime = distance ? Math.ceil(distance / 83) : null;
-  const steps = getDirectionsSteps();
+  
   const filteredBuildings = allBuildings.filter(b => 
     b.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -163,7 +135,7 @@ async function loadBuildings() {
       {/* Header */}
       <div className="bg-cyan-600 text-white sticky top-0 z-10 shadow-lg">
         <div className="px-4 py-4">
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => router.back()}
               className="p-2 hover:bg-cyan-700 rounded-lg transition-colors"
@@ -203,6 +175,14 @@ async function loadBuildings() {
                 <p className="text-gray-600">Choose starting point</p>
               </button>
             )}
+            {origin && (
+              <button
+                onClick={() => setOrigin(null)}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
+            )}
           </div>
 
           {/* Connector Line */}
@@ -217,7 +197,7 @@ async function loadBuildings() {
             </div>
             <div className="flex-1">
               <p className="font-medium text-gray-900">
-                {destination?.name || 'Choose destination'}
+                {destination?.name || 'No destination'}
               </p>
               {destination?.category && (
                 <span
@@ -248,23 +228,39 @@ async function loadBuildings() {
         </div>
 
         {/* Step-by-Step Directions */}
-        {origin && destination && (
+        {origin && destination && distance && (
           <div className="bg-white rounded-lg shadow-md p-4">
             <h2 className="text-lg font-bold text-gray-900 mb-4">
               Step-by-Step Directions
             </h2>
             <div className="space-y-4">
-              {steps.map((step, index) => (
-                <div key={index} className="flex items-start gap-3">
-                  <div className="p-2 bg-cyan-50 rounded-full text-cyan-600">
-                    {step.icon}
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">{step.instruction}</p>
-                    <p className="text-sm text-gray-500">{step.distance}</p>
-                  </div>
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-cyan-50 rounded-full text-cyan-600">
+                  <Navigation className="w-5 h-5" />
                 </div>
-              ))}
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900">Head towards {destination.name}</p>
+                  <p className="text-sm text-gray-500">{distance}m</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-cyan-50 rounded-full text-cyan-600">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900">Continue walking for about {walkingTime} minutes</p>
+                  <p className="text-sm text-gray-500">{walkingTime} min</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-cyan-50 rounded-full text-cyan-600">
+                  <MapPin className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900">Arrive at {destination.name}</p>
+                  <p className="text-sm text-gray-500">Destination</p>
+                </div>
+              </div>
             </div>
 
             {/* Open in External Map */}
@@ -294,16 +290,21 @@ async function loadBuildings() {
 
       {/* Origin Selection Modal */}
       {showOriginSelect && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
+        <div 
+          className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowOriginSelect(false);
+          }}
+        >
           <div className="bg-white w-full sm:max-w-lg sm:rounded-lg max-h-[80vh] flex flex-col">
             <div className="p-4 border-b">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-lg font-bold">Choose Starting Point</h3>
                 <button
                   onClick={() => setShowOriginSelect(false)}
-                  className="p-2 hover:bg-gray-100 rounded-lg"
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  ✕
+                  <X className="w-5 h-5" />
                 </button>
               </div>
               <input
@@ -317,26 +318,34 @@ async function loadBuildings() {
             <div className="flex-1 overflow-y-auto">
               <button
                 onClick={getCurrentLocation}
-                className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b flex items-center gap-3"
+                className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b flex items-center gap-3 transition-colors"
               >
-                <Target className="w-5 h-5 text-cyan-600" />
+                <div className="p-2 bg-cyan-50 rounded-full">
+                  <Target className="w-5 h-5 text-cyan-600" />
+                </div>
                 <div>
                   <p className="font-medium text-gray-900">My Location</p>
                   <p className="text-sm text-gray-500">Use current location</p>
                 </div>
               </button>
-              {filteredBuildings.map((building) => (
-                <button
-                  key={building.id}
-                  onClick={() => selectOrigin(building)}
-                  className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b"
-                >
-                  <p className="font-medium text-gray-900">{building.name}</p>
-                  {building.category && (
-                    <p className="text-sm text-gray-500">{building.category.name}</p>
-                  )}
-                </button>
-              ))}
+              {filteredBuildings.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">
+                  <p>No buildings found</p>
+                </div>
+              ) : (
+                filteredBuildings.map((building) => (
+                  <button
+                    key={building.id}
+                    onClick={() => selectOrigin(building)}
+                    className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b transition-colors"
+                  >
+                    <p className="font-medium text-gray-900">{building.name}</p>
+                    {building.category && (
+                      <p className="text-sm text-gray-500">{building.category.name}</p>
+                    )}
+                  </button>
+                ))
+              )}
             </div>
           </div>
         </div>
