@@ -30,37 +30,44 @@ export default function FavoritesPage() {
   }, []);
 
   async function loadFavorites() {
-    setLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
-      const { data } = await supabase
-        .from('user_favorites')
-        .select(`
-          building_id,
-          building:buildings(
-            *,
-            category:building_categories(*),
-            details:building_details(*)
-          )
-        `)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (data) {
-        const buildings = data.map(f => f.building).filter(Boolean);
-        setFavorites(buildings);
-      }
-    } catch (error) {
-      console.error('Error loading favorites:', error);
-    } finally {
+  setLoading(true);
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
       setLoading(false);
+      return;
     }
+
+    const { data } = await supabase
+      .from('user_favorites')
+      .select(`
+        building_id,
+        building:buildings(
+          *,
+          category:building_categories(*),
+          details:building_details(*)
+        )
+      `)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (data) {
+      // Fix: Handle the building as single object, not array
+      const buildings = data
+        .map((f: any) => {
+          const building = Array.isArray(f.building) ? f.building[0] : f.building;
+          return building;
+        })
+        .filter(Boolean) as Building[];
+      
+      setFavorites(buildings);
+    }
+  } catch (error) {
+    console.error('Error loading favorites:', error);
+  } finally {
+    setLoading(false);
   }
+}
 
   async function removeFavorite(buildingId: number) {
     const { data: { user } } = await supabase.auth.getUser();
