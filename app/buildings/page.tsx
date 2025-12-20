@@ -9,8 +9,6 @@ import { Building, BuildingCategory } from '@/types/database.types';
 
 
 
-// CORRECT - Import from types file:
-import { Building } from '@/types/database.types';
 
 export default function BuildingsPage() {
   const router = useRouter();
