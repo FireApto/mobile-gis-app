@@ -136,35 +136,41 @@ function MapPageContent() {
     router.push('/');
   }
 
-  async function loadBuildings() {
-    try {
-      const { data } = await supabase
-        .from('buildings')
-        .select(`
-          id,
-          name,
-          center_lat,
-          center_lng,
-          category:building_categories(name, color),
-          details:building_details(
-            description,
-            opening_hours,
-            facilities_count,
-            contact_phone,
-            contact_email
-          )
-        `);
+ async function loadBuildings() {
+  try {
+    const { data } = await supabase
+      .from('buildings')
+      .select(`
+        id,
+        name,
+        center_lat,
+        center_lng,
+        category:building_categories(name, color),
+        details:building_details(
+          description,
+          opening_hours,
+          facilities_count,
+          contact_phone,
+          contact_email
+        )
+      `);
 
-      if (data) {
-        setAllBuildings(data);
-        setVisibleBuildings([]);
-      }
-    } catch (error) {
-      console.error('Error loading buildings:', error);
-    } finally {
-      setLoading(false);
+    if (data) {
+      // Transform data to match Building type
+      const buildings: Building[] = data.map((item: any) => ({
+        ...item,
+        category: Array.isArray(item.category) ? item.category[0] : item.category,
+        details: Array.isArray(item.details) ? item.details[0] : item.details
+      }));
+      setAllBuildings(buildings);
+      setVisibleBuildings([]);
     }
+  } catch (error) {
+    console.error('Error loading buildings:', error);
+  } finally {
+    setLoading(false);
   }
+}
 
   function getUserLocation() {
     if (navigator.geolocation) {
@@ -201,11 +207,16 @@ function MapPageContent() {
       .ilike('name', `%${query}%`)
       .limit(10);
 
-    if (data) {
-      setSearchResults(data);
-      setShowSearchResults(true);
-      setVisibleBuildings(data);
-    }
+   if (data) {
+  // Transform search results
+  const buildings: Building[] = data.map((item: any) => ({
+    ...item,
+    category: Array.isArray(item.category) ? item.category[0] : item.category
+  }));
+  setSearchResults(buildings);
+  setShowSearchResults(true);
+  setVisibleBuildings(buildings);
+}
   }
 
   function selectBuilding(building: Building) {

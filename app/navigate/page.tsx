@@ -1,10 +1,10 @@
 // app/navigate/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Navigation, MapPin, Clock, Flag } from 'lucide-react';
+import { Navigation, MapPin, Clock, Flag, Loader2 } from 'lucide-react';
 
 interface Building {
   id: number;
@@ -14,7 +14,7 @@ interface Building {
   center_lng: number;
 }
 
-export default function NavigatePage() {
+function NavigatePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [buildings, setBuildings] = useState<Building[]>([]);
@@ -123,7 +123,7 @@ export default function NavigatePage() {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <Loader2 className="w-16 h-16 text-blue-500 animate-spin mx-auto mb-4" />
           <p className="text-gray-600">Loading...</p>
         </div>
       </div>
@@ -197,7 +197,7 @@ export default function NavigatePage() {
         >
           {calculating ? (
             <>
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              <Loader2 className="w-5 h-5 animate-spin" />
               Calculating...
             </>
           ) : (
@@ -258,5 +258,17 @@ export default function NavigatePage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function NavigatePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
+      </div>
+    }>
+      <NavigatePageContent />
+    </Suspense>
   );
 }
