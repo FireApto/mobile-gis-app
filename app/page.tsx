@@ -15,7 +15,9 @@ import {
   Minus,
   Loader2,
   X,
-  Navigation
+  Navigation,
+  Star,
+  ChevronRight, 
 } from 'lucide-react';
 
 const Map = dynamic(() => import('@/components/Map').then(mod => ({ default: mod.Map })), {
@@ -26,6 +28,22 @@ const Map = dynamic(() => import('@/components/Map').then(mod => ({ default: mod
     </div>
   )
 });
+
+interface Recommendation {
+  source_type: string;
+  source_id: number;
+  name: string;
+  category: string;
+  color: string;
+  icon: string;
+  type: string;
+  amenity: string;
+  lat: number;
+  lng: number;
+  description: string;
+  facilities_count: number;
+  priority: number;
+}
 
 interface Building {
   id: number;
@@ -59,35 +77,62 @@ function MapPageContent() {
   const [isNavigating, setIsNavigating] = useState(false);
   const [activeRoute, setActiveRoute] = useState<Route | null>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][]>([]);
-  const [showStepsModal, setShowStepsModal] = useState(false); // NEW!
+  const [showStepsModal, setShowStepsModal] = useState(false);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [showRecommendations, setShowRecommendations] = useState(false);
 
+  // Load buildings and recommendations on mount
   useEffect(() => {
     loadBuildings();
+    loadRecommendations();
   }, []);
+
+  // Auto-show recommendations after initial load
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (visibleBuildings.length === 0 && !isNavigating && !searchQuery && !loading) {
+        setShowRecommendations(true);
+      }
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [loading]);
+
+  // Auto-show recommendations when map is cleared
+  useEffect(() => {
+    if (visibleBuildings.length === 0 && !isNavigating && !loading && !searchQuery) {
+      const timer = setTimeout(() => {
+        setShowRecommendations(true);
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    } else {
+      // Hide recommendations when showing buildings
+      if (visibleBuildings.length > 0) {
+        setShowRecommendations(false);
+      }
+    }
+  }, [visibleBuildings, isNavigating, loading, searchQuery]);
 
   useEffect(() => {
     if (fromId && toId && allBuildings.length > 0) {
       handleNavigationMode();
     }
   }, [fromId, toId, allBuildings]);
-  // Add this to your MapPageContent function in app/page.tsx
-// After the existing useEffect for fromId and toId
 
-useEffect(() => {
-  // Handle ?selected= parameter from buildings list
-  const selectedId = searchParams.get('selected');
-  if (selectedId && allBuildings.length > 0) {
-    const building = allBuildings.find(b => b.id === parseInt(selectedId));
-    if (building) {
-      // Center on the building
-      setMapCenter([building.center_lat, building.center_lng]);
-      setMapZoom(19);
-      setSelectedBuildingId(building.id);
-      setVisibleBuildings([building]);
-      setSearchQuery(building.name || '');
+  useEffect(() => {
+    const selectedId = searchParams.get('selected');
+    if (selectedId && allBuildings.length > 0) {
+      const building = allBuildings.find(b => b.id === parseInt(selectedId));
+      if (building) {
+        setMapCenter([building.center_lat, building.center_lng]);
+        setMapZoom(19);
+        setSelectedBuildingId(building.id);
+        setVisibleBuildings([building]);
+        setSearchQuery(building.name || '');
+      }
     }
-  }
-}, [searchParams, allBuildings]);
+  }, [searchParams, allBuildings]);
 
   async function fetchAndDisplayRoute(
     origin: [number, number],
@@ -117,35 +162,35 @@ useEffect(() => {
     }
   }
 
-async function handleNavigationMode() {
-  if (!fromId || !toId) return;
-  
-  setIsNavigating(true);
-  
-  let originCoords: [number, number] | null = null;
-  
-  if (parseInt(fromId) === 0) {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          originCoords = [position.coords.latitude, position.coords.longitude];
-          setUserLocation(originCoords); // ✨ NEW LINE
-          await fetchAndDisplayRoute(originCoords, parseInt(toId));
-        },
-        (error) => {
-          console.error('Could not get location');
-        }
-      );
-    }
-  } else {
-    const origin = allBuildings.find(b => b.id === parseInt(fromId));
-    if (origin) {
-      originCoords = [origin.center_lat, origin.center_lng];
-      setUserLocation(originCoords); // ✨ NEW LINE
-      await fetchAndDisplayRoute(originCoords, parseInt(toId));
+  async function handleNavigationMode() {
+    if (!fromId || !toId) return;
+    
+    setIsNavigating(true);
+    
+    let originCoords: [number, number] | null = null;
+    
+    if (parseInt(fromId) === 0) {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            originCoords = [position.coords.latitude, position.coords.longitude];
+            setUserLocation(originCoords);
+            await fetchAndDisplayRoute(originCoords, parseInt(toId));
+          },
+          (error) => {
+            console.error('Could not get location');
+          }
+        );
+      }
+    } else {
+      const origin = allBuildings.find(b => b.id === parseInt(fromId));
+      if (origin) {
+        originCoords = [origin.center_lat, origin.center_lng];
+        setUserLocation(originCoords);
+        await fetchAndDisplayRoute(originCoords, parseInt(toId));
+      }
     }
   }
-}
 
   function exitNavigationMode() {
     setIsNavigating(false);
@@ -154,45 +199,44 @@ async function handleNavigationMode() {
     setActiveRoute(null);
     setRouteCoordinates([]);
     setShowStepsModal(false);
-	setUserLocation(null);
+    setUserLocation(null);
     router.push('/');
   }
 
- async function loadBuildings() {
-  try {
-    const { data } = await supabase
-      .from('buildings')
-      .select(`
-        id,
-        name,
-        center_lat,
-        center_lng,
-        category:building_categories(name, color),
-        details:building_details(
-          description,
-          opening_hours,
-          facilities_count,
-          contact_phone,
-          contact_email
-        )
-      `);
+  async function loadBuildings() {
+    try {
+      const { data } = await supabase
+        .from('buildings')
+        .select(`
+          id,
+          name,
+          center_lat,
+          center_lng,
+          category:building_categories(name, color),
+          details:building_details(
+            description,
+            opening_hours,
+            facilities_count,
+            contact_phone,
+            contact_email
+          )
+        `);
 
-    if (data) {
-      // Transform data to match Building type
-      const buildings: Building[] = data.map((item: any) => ({
-        ...item,
-        category: Array.isArray(item.category) ? item.category[0] : item.category,
-        details: Array.isArray(item.details) ? item.details[0] : item.details
-      }));
-      setAllBuildings(buildings);
-      setVisibleBuildings([]);
+      if (data) {
+        const buildings: Building[] = data.map((item: any) => ({
+          ...item,
+          category: Array.isArray(item.category) ? item.category[0] : item.category,
+          details: Array.isArray(item.details) ? item.details[0] : item.details
+        }));
+        setAllBuildings(buildings);
+        setVisibleBuildings([]);
+      }
+    } catch (error) {
+      console.error('Error loading buildings:', error);
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error('Error loading buildings:', error);
-  } finally {
-    setLoading(false);
   }
-}
 
   function getUserLocation() {
     if (navigator.geolocation) {
@@ -204,6 +248,23 @@ async function handleNavigationMode() {
           console.log('Location access denied, using default center');
         }
       );
+    }
+  }
+
+  async function loadRecommendations() {
+    try {
+      const { data } = await supabase
+        .from('v_map_recommendations')
+        .select('*')
+        .order('priority')
+        .order('name')
+        .limit(10);
+
+      if (data) {
+        setRecommendations(data);
+      }
+    } catch (error) {
+      console.error('Error loading recommendations:', error);
     }
   }
 
@@ -229,16 +290,20 @@ async function handleNavigationMode() {
       .ilike('name', `%${query}%`)
       .limit(10);
 
-   if (data) {
-  // Transform search results
-  const buildings: Building[] = data.map((item: any) => ({
-    ...item,
-    category: Array.isArray(item.category) ? item.category[0] : item.category
-  }));
-  setSearchResults(buildings);
-  setShowSearchResults(true);
-  setVisibleBuildings(buildings);
-}
+    if (data) {
+      const buildings: Building[] = data.map((item: any) => ({
+        ...item,
+        category: Array.isArray(item.category) ? item.category[0] : item.category
+      }));
+      setSearchResults(buildings);
+      setShowSearchResults(true);
+      setVisibleBuildings(buildings);
+      
+      // Show recommendations if no results
+      if (buildings.length === 0) {
+        setTimeout(() => setShowRecommendations(true), 500);
+      }
+    }
   }
 
   function selectBuilding(building: Building) {
@@ -278,7 +343,158 @@ async function handleNavigationMode() {
     router.push(`/directions?to=${buildingId}`);
   }
 
-  // ROUTE INFO PANEL COMPONENT
+  // ENHANCED RECOMMENDATIONS PANEL
+  function RecommendationsPanel() {
+    if (!showRecommendations || recommendations.length === 0) return null;
+
+    const getMessage = () => {
+      if (searchQuery && visibleBuildings.length === 0) {
+        return {
+          title: "🔍 Nothing found?",
+          subtitle: "Try these popular locations instead"
+        };
+      }
+      
+      if (visibleBuildings.length === 0 && !loading) {
+        return {
+          title: "👋 Welcome to DeKUT!",
+          subtitle: "Start exploring popular campus locations"
+        };
+      }
+
+      return {
+        title: "⭐ Recommended Places",
+        subtitle: "Popular campus locations"
+      };
+    };
+
+    const message = getMessage();
+
+    // Group recommendations by type
+    const grouped: { [key: string]: typeof recommendations } = {};
+    recommendations.forEach(rec => {
+      if (!grouped[rec.type]) grouped[rec.type] = [];
+      grouped[rec.type].push(rec);
+    });
+
+    return (
+      <div className="absolute top-24 left-4 z-30 bg-white rounded-lg shadow-xl max-w-sm w-full max-h-[60vh] overflow-hidden flex flex-col animate-slideIn">
+        {/* Header */}
+        <div className="p-4 border-b bg-gradient-to-r from-cyan-600 to-cyan-700">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-white">
+              {message.title}
+            </h3>
+            <button
+              onClick={() => setShowRecommendations(false)}
+              className="p-1 hover:bg-cyan-800 rounded-full transition-colors"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
+          <p className="text-cyan-100 text-sm mt-1">
+            {message.subtitle}
+          </p>
+        </div>
+
+        {/* Quick stats */}
+        <div className="px-4 py-3 bg-cyan-50 border-b">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-600">
+              📍 {recommendations.length} locations available
+            </span>
+            <span className="text-cyan-600 font-medium">
+              Tap to explore
+            </span>
+          </div>
+        </div>
+
+        {/* List grouped by type */}
+        <div className="flex-1 overflow-y-auto">
+          {Object.entries(grouped).map(([type, items]) => (
+            <div key={type}>
+              <div className="px-4 py-2 bg-gray-50 border-b sticky top-0">
+                <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                  {type} ({items.length})
+                </h4>
+              </div>
+              
+              {items.map((rec) => (
+                <button
+                  key={`${rec.source_type}-${rec.source_id}`}
+                  onClick={() => {
+                    if (rec.source_type === 'building') {
+                      const building = allBuildings.find(b => b.id === rec.source_id);
+                      if (building) {
+                        setMapCenter([rec.lat, rec.lng]);
+                        setMapZoom(19);
+                        setSelectedBuildingId(rec.source_id);
+                        setVisibleBuildings([building]);
+                        setShowRecommendations(false);
+                        setSearchQuery(rec.name);
+                      }
+                    }
+                  }}
+                  className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b transition-colors flex items-start gap-3 group"
+                >
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110"
+                    style={{ backgroundColor: `${rec.color}20` }}
+                  >
+                    <span className="text-xl">{rec.icon}</span>
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-semibold text-gray-900 truncate group-hover:text-cyan-600 transition-colors">
+                      {rec.name}
+                    </h4>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span
+                        className="inline-block px-2 py-0.5 text-xs font-medium rounded-full"
+                        style={{
+                          backgroundColor: `${rec.color}20`,
+                          color: rec.color
+                        }}
+                      >
+                        {rec.category}
+                      </span>
+                      {rec.facilities_count > 0 && (
+                        <span className="text-xs text-gray-500">
+                          🏢 {rec.facilities_count} facilities
+                        </span>
+                      )}
+                    </div>
+                    {rec.description && (
+                      <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                        {rec.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0 mt-2 group-hover:text-cyan-600 group-hover:translate-x-1 transition-all" />
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="p-3 border-t bg-gray-50">
+          <button
+            onClick={() => {
+              setShowRecommendations(false);
+              router.push('/buildings');
+            }}
+            className="w-full px-4 py-2 text-sm font-medium text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors"
+          >
+            View All Buildings →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ROUTE INFO PANEL
   function RouteInfoPanel() {
     if (!activeRoute) return null;
     
@@ -326,7 +542,7 @@ async function handleNavigationMode() {
     );
   }
 
-  // STEPS MODAL COMPONENT
+  // STEPS MODAL
   function StepsModal({ 
     isOpen, 
     onClose, 
@@ -344,7 +560,6 @@ async function handleNavigationMode() {
     return (
       <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col">
-          {/* Header */}
           <div className="p-6 border-b">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-2xl font-bold text-gray-900">Turn-by-Turn Directions</h2>
@@ -361,17 +576,13 @@ async function handleNavigationMode() {
             </div>
           </div>
 
-          {/* Steps List */}
           <div className="flex-1 overflow-y-auto p-6">
             <div className="space-y-4">
               {route.steps.map((step, index) => (
                 <div key={index} className="flex items-start gap-4">
-                  {/* Step Number */}
                   <div className="flex-shrink-0 w-8 h-8 bg-cyan-600 text-white rounded-full flex items-center justify-center font-bold">
                     {index + 1}
                   </div>
-
-                  {/* Step Details */}
                   <div className="flex-1 pt-1">
                     <p className="font-medium text-gray-900 mb-1">
                       {step.instruction}
@@ -387,7 +598,6 @@ async function handleNavigationMode() {
             </div>
           </div>
 
-          {/* Footer */}
           <div className="p-6 border-t">
             <button
               onClick={onClose}
@@ -406,7 +616,6 @@ async function handleNavigationMode() {
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="relative h-full">
-        {/* Navigation Mode Banner */}
         {isNavigating && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-cyan-600 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-3">
             <div className="flex items-center gap-2">
@@ -422,7 +631,6 @@ async function handleNavigationMode() {
           </div>
         )}
 
-        {/* Top Bar */}
         <div className="absolute top-0 left-0 right-0 z-30">
           <div className="bg-white shadow-lg m-4 rounded-lg">
             <div className="flex items-center gap-2 p-3">
@@ -469,6 +677,14 @@ async function handleNavigationMode() {
                 )}
               </div>
 
+              <button
+                onClick={() => setShowRecommendations(!showRecommendations)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Show Recommendations"
+              >
+                <Star className={`w-6 h-6 ${showRecommendations ? 'text-yellow-500 fill-yellow-500' : 'text-gray-700'}`} />
+              </button>
+
               {visibleBuildings.length > 0 && !isNavigating && (
                 <button
                   onClick={clearMap}
@@ -481,7 +697,8 @@ async function handleNavigationMode() {
           </div>
         </div>
 
-        {/* Map Container */}
+        <RecommendationsPanel />
+
         <div className="absolute inset-0">
           {loading ? (
             <div className="w-full h-full flex items-center justify-center bg-gray-100">
@@ -496,12 +713,11 @@ async function handleNavigationMode() {
               onBuildingClick={handleBuildingClick}
               onGetDirections={handleGetDirections}
               routeCoordinates={routeCoordinates}
-			  userLocation={userLocation}
+              userLocation={userLocation}
             />
           )}
         </div>
 
-        {/* Map Controls */}
         <div className="absolute right-4 top-24 z-20 flex flex-col gap-2">
           <button 
             onClick={handleLocateMe}
@@ -527,10 +743,8 @@ async function handleNavigationMode() {
           </div>
         </div>
 
-        {/* Route Info Panel */}
         {isNavigating && <RouteInfoPanel />}
 
-        {/* Quick Access Buttons */}
         {!isNavigating && (
           <div className="absolute bottom-6 left-0 right-0 z-20 px-4">
             <div className="bg-white rounded-full shadow-xl p-2 flex items-center justify-center gap-2 max-w-md mx-auto">
@@ -551,8 +765,7 @@ async function handleNavigationMode() {
           </div>
         )}
 
-        {/* Info Message */}
-        {visibleBuildings.length === 0 && !loading && !isNavigating && (
+        {visibleBuildings.length === 0 && !loading && !isNavigating && !showRecommendations && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 text-center pointer-events-none">
             <p className="text-gray-500 bg-white/90 px-4 py-2 rounded-lg shadow">
               🔍 Search for a building to see it on the map
@@ -560,7 +773,6 @@ async function handleNavigationMode() {
           </div>
         )}
 
-        {/* Steps Modal */}
         <StepsModal 
           isOpen={showStepsModal}
           onClose={() => setShowStepsModal(false)}
