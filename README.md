@@ -30,8 +30,8 @@ The application is designed for scalability, intelligence, and real-world GIS wo
 
 ### Data and Backend
 
-- Python for data processing and automation
 - Overpass API for OpenStreetMap data extraction
+- Python for data processing and automation
 - Supabase PostgreSQL backend
 - Spatial data modeling
 
