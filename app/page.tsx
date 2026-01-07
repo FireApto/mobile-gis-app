@@ -239,17 +239,22 @@ function MapPageContent() {
   }
 
   function getUserLocation() {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setMapCenter([position.coords.latitude, position.coords.longitude]);
-        },
-        (error) => {
-          console.log('Location access denied, using default center');
-        }
-      );
-    }
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const userCoords: [number, number] = [position.coords.latitude, position.coords.longitude];
+        setMapCenter(userCoords);
+        setMapZoom(18);
+        setUserLocation(userCoords);
+        console.log('✅ Located at:', userCoords);
+      },
+      (error) => {
+        console.log('Location access denied, using default center');
+        alert('Please enable location access to use this feature');
+      }
+    );
   }
+}
 
   async function loadRecommendations() {
     try {
@@ -325,14 +330,12 @@ function MapPageContent() {
     }
   }
 
-  function handleLocateMe() {
-    getUserLocation();
-    setMapZoom(18);
-    setSelectedBuildingId(null);
-    setVisibleBuildings([]);
-    setSearchQuery('');
-  }
-
+ function handleLocateMe() {
+  setSelectedBuildingId(null);
+  setVisibleBuildings([]);
+  setSearchQuery('');
+  getUserLocation();
+}
   function clearMap() {
     setVisibleBuildings([]);
     setSearchQuery('');
