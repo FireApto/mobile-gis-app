@@ -1,7 +1,7 @@
 // components/Map.tsx
 'use client';
 import { Polyline } from 'react-leaflet';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -41,7 +41,7 @@ interface MapProps {
   onBuildingClick?: (buildingId: number) => void;
   onGetDirections?: (buildingId: number) => void;
   routeCoordinates?: [number, number][];
-  userLocation?: [number, number] | null; // NEW: User's current location
+  userLocation?: [number, number] | null;
 }
 
 // Custom marker icon creator for buildings
@@ -84,7 +84,7 @@ function createCustomIcon(color: string = '#0891B2', isSelected: boolean = false
   });
 }
 
-// NEW: Origin marker icon (green circular marker for user location)
+// Origin marker icon (green circular marker for user location)
 function createOriginIcon() {
   return L.divIcon({
     className: 'origin-marker',
@@ -124,7 +124,7 @@ function createOriginIcon() {
   });
 }
 
-// NEW: Destination marker icon (red for destination during navigation)
+// Destination marker icon (red for destination during navigation)
 function createDestinationIcon() {
   const size = 40;
   
@@ -162,13 +162,15 @@ function createDestinationIcon() {
   });
 }
 
-// Component to handle map centering
+// Component to handle map centering - FIXED VERSION
 function MapUpdater({ 
-  center, 
+  center,
+  zoom,
   selectedBuildingId, 
   buildings 
 }: { 
   center: [number, number];
+  zoom: number;
   selectedBuildingId?: number | null;
   buildings: Building[];
 }) {
@@ -177,7 +179,8 @@ function MapUpdater({
   useEffect(() => {
     if (map && center && center[0] != null && center[1] != null) {
       try {
-        map.setView(center, map.getZoom());
+        // FIX: Use zoom prop instead of map.getZoom()
+        map.setView(center, zoom);
         
         if (selectedBuildingId) {
           setTimeout(() => {
@@ -197,7 +200,7 @@ function MapUpdater({
         console.error('Error updating map view:', error);
       }
     }
-  }, [center, map, selectedBuildingId, buildings]);
+  }, [center, zoom, map, selectedBuildingId, buildings]);
   
   return null;
 }
@@ -210,7 +213,7 @@ export function Map({
   onBuildingClick,
   onGetDirections,
   routeCoordinates = [],
-  userLocation = null // NEW: Accept user location
+  userLocation = null
 }: MapProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -244,37 +247,40 @@ export function Map({
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       
+      {/* FIX: Pass zoom prop to MapUpdater */}
       <MapUpdater 
-        center={center} 
+        center={center}
+        zoom={zoom}
         selectedBuildingId={selectedBuildingId}
         buildings={buildings}
       />
 
       {/* User Location Marker - Always show when we have user location */}
-{userLocation && (
-  <Marker
-    position={userLocation}
-    icon={createOriginIcon()}
-    zIndexOffset={1000}
-  >
-    <Popup>
-      <div className="p-2 min-w-[200px]">
-        <h3 className="font-bold text-green-600 mb-1 flex items-center gap-2">
-          <MapPin className="w-4 h-4" />
-          You Are Here
-        </h3>
-        <p className="text-sm text-gray-600">
-          {isNavigating ? 'Starting point' : 'Your current location'}
-        </p>
-        <div className="mt-2 pt-2 border-t border-gray-200">
-          <p className="text-xs text-gray-500">
-            📍 {userLocation[0].toFixed(6)}, {userLocation[1].toFixed(6)}
-          </p>
-        </div>
-      </div>
-    </Popup>
-  </Marker>
-)}
+      {userLocation && (
+        <Marker
+          position={userLocation}
+          icon={createOriginIcon()}
+          zIndexOffset={1000}
+        >
+          <Popup>
+            <div className="p-2 min-w-[200px]">
+              <h3 className="font-bold text-green-600 mb-1 flex items-center gap-2">
+                <MapPin className="w-4 h-4" />
+                You Are Here
+              </h3>
+              <p className="text-sm text-gray-600">
+                {isNavigating ? 'Starting point' : 'Your current location'}
+              </p>
+              <div className="mt-2 pt-2 border-t border-gray-200">
+                <p className="text-xs text-gray-500">
+                  📍 {userLocation[0].toFixed(6)}, {userLocation[1].toFixed(6)}
+                </p>
+              </div>
+            </div>
+          </Popup>
+        </Marker>
+      )}
+
       {/* ROUTE LINE */}
       {routeCoordinates.length > 0 && (
         <Polyline
