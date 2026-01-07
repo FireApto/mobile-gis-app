@@ -250,30 +250,31 @@ export function Map({
         buildings={buildings}
       />
 
-      {/* NEW: Origin Marker - User's Location (Green Circle) */}
-      {userLocation && isNavigating && (
-        <Marker
-          position={userLocation}
-          icon={createOriginIcon()}
-          zIndexOffset={1000} // Keep on top
-        >
-          <Popup>
-            <div className="p-2 min-w-[200px]">
-              <h3 className="font-bold text-green-600 mb-1 flex items-center gap-2">
-                <MapPin className="w-4 h-4" />
-                Your Location
-              </h3>
-              <p className="text-sm text-gray-600">Starting point</p>
-              <div className="mt-2 pt-2 border-t border-gray-200">
-                <p className="text-xs text-gray-500">
-                  📍 {userLocation[0].toFixed(6)}, {userLocation[1].toFixed(6)}
-                </p>
-              </div>
-            </div>
-          </Popup>
-        </Marker>
-      )}
-
+      {/* User Location Marker - Always show when we have user location */}
+{userLocation && (
+  <Marker
+    position={userLocation}
+    icon={createOriginIcon()}
+    zIndexOffset={1000}
+  >
+    <Popup>
+      <div className="p-2 min-w-[200px]">
+        <h3 className="font-bold text-green-600 mb-1 flex items-center gap-2">
+          <MapPin className="w-4 h-4" />
+          You Are Here
+        </h3>
+        <p className="text-sm text-gray-600">
+          {isNavigating ? 'Starting point' : 'Your current location'}
+        </p>
+        <div className="mt-2 pt-2 border-t border-gray-200">
+          <p className="text-xs text-gray-500">
+            📍 {userLocation[0].toFixed(6)}, {userLocation[1].toFixed(6)}
+          </p>
+        </div>
+      </div>
+    </Popup>
+  </Marker>
+)}
       {/* ROUTE LINE */}
       {routeCoordinates.length > 0 && (
         <Polyline
