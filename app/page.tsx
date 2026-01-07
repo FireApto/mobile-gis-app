@@ -237,42 +237,49 @@ function MapPageContent() {
       setLoading(false);
     }
   }
-
-  function getUserLocation() {
+function getUserLocation() {
   if (navigator.geolocation) {
+    console.log('📡 Getting your location...');
+    
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const userCoords: [number, number] = [position.coords.latitude, position.coords.longitude];
+        const userCoords: [number, number] = [
+          position.coords.latitude,
+          position.coords.longitude
+        ];
+        
+        console.log('✅ LOCATION FOUND:', userCoords);
+        console.log('📍 Accuracy:', Math.round(position.coords.accuracy), 'm');
+        
+        setUserLocation(userCoords);
         setMapCenter(userCoords);
         setMapZoom(18);
-        setUserLocation(userCoords);
-        console.log('✅ Located at:', userCoords);
       },
       (error) => {
-        console.log('Location access denied, using default center');
-        alert('Please enable location access to use this feature');
+        console.error('Location failed, using campus center');
+        
+        // FALLBACK: Use DeKUT campus center
+        const campusCoords: [number, number] = [-0.3959, 36.9636];
+        
+        setUserLocation(campusCoords);
+        setMapCenter(campusCoords);
+        setMapZoom(17);
+        
+        alert('📍 Showing DeKUT campus area (location unavailable)');
+      },
+      {
+        enableHighAccuracy: false,  // Less demanding
+        timeout: 30000,             // 30 seconds
+        maximumAge: 60000           // Accept cached location
       }
     );
+  } else {
+    const campusCoords: [number, number] = [-0.3959, 36.9636];
+    setUserLocation(campusCoords);
+    setMapCenter(campusCoords);
+    setMapZoom(17);
   }
 }
-
-  async function loadRecommendations() {
-    try {
-      const { data } = await supabase
-        .from('v_map_recommendations')
-        .select('*')
-        .order('priority')
-        .order('name')
-        .limit(10);
-
-      if (data) {
-        setRecommendations(data);
-      }
-    } catch (error) {
-      console.error('Error loading recommendations:', error);
-    }
-  }
-
   async function handleSearch(query: string) {
     setSearchQuery(query);
     
@@ -330,12 +337,13 @@ function MapPageContent() {
     }
   }
 
- function handleLocateMe() {
-  setSelectedBuildingId(null);
-  setVisibleBuildings([]);
-  setSearchQuery('');
-  getUserLocation();
-}
+  function handleLocateMe() {
+    setSelectedBuildingId(null);
+    setVisibleBuildings([]);
+    setSearchQuery('');
+    getUserLocation();
+  }
+
   function clearMap() {
     setVisibleBuildings([]);
     setSearchQuery('');
