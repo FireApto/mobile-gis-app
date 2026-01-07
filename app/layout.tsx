@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import Script from 'next/script';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,10 +25,29 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+	<head>
+	<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#0891B2" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="DeKUT Navigator" />
+</head>
+
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+		<Script id="register-sw" strategy="afterInteractive">
+  {`
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then(reg => console.log('SW registered:', reg))
+          .catch(err => console.log('SW error:', err));
+      });
+    }
+  `}
+</Script>
       </body>
     </html>
   );

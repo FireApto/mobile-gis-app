@@ -202,6 +202,18 @@ function MapUpdater({
   return null;
 }
 
+function ZoomUpdater({ zoom }: { zoom: number }) {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (map && zoom) {
+      map.setZoom(zoom);
+    }
+  }, [zoom, map]);
+  
+  return null;
+}
+
 export function Map({ 
   buildings, 
   center = [-0.3970, 36.9580], 
@@ -249,6 +261,9 @@ export function Map({
         selectedBuildingId={selectedBuildingId}
         buildings={buildings}
       />
+
+{/* ADD THIS LINE */}
+      <ZoomUpdater zoom={zoom} />
 
       {/* NEW: Origin Marker - User's Location (Green Circle) */}
       {userLocation && isNavigating && (
