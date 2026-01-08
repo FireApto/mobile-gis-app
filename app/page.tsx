@@ -280,6 +280,22 @@ function getUserLocation() {
     setMapZoom(17);
   }
 }
+async function loadRecommendations() {
+  try {
+    const { data } = await supabase
+      .from('v_map_recommendations')
+      .select('*')
+      .order('priority')
+      .order('name')
+      .limit(10);
+
+    if (data) {
+      setRecommendations(data);
+    }
+  } catch (error) {
+    console.error('Error loading recommendations:', error);
+  }
+}
   async function handleSearch(query: string) {
     setSearchQuery(query);
     
